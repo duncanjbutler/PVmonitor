@@ -7,6 +7,7 @@
 import sys
 from PyQt5 import QtCore, QtGui, QtWidgets, uic
 import epics
+import random
 from functools import partial
 import matplotlib.pyplot as plt
 from datetime import datetime
@@ -14,12 +15,73 @@ import numpy as np
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+from numpy import arange, sin, pi
+
+
+class MyMplCanvas(FigureCanvas):
+	"""Ultimately, this is a QWidget (as well as a FigureCanvasAgg, etc.)."""
+	def __init__(self, parent=None, width=5, height=4, dpi=100):
+		
+		#Hold the data here
+		self.data_x=[]
+		self.data_y=[]
+		
+		fig = Figure(figsize=(width, height), dpi=dpi)
+		self.axes = fig.add_subplot(111)
+		# We want the axes cleared every time plot() is called
+		#self.axes.hold(False)
+		
+		self.compute_initial_figure()
+
+		#
+		FigureCanvas.__init__(self, fig)
+		self.setParent(parent)
+
+		FigureCanvas.setSizePolicy(self,
+				QtWidgets.QSizePolicy.Expanding,
+				QtWidgets.QSizePolicy.Expanding)
+		FigureCanvas.updateGeometry(self)
+
+	def compute_initial_figure(self):
+		pass
+
+class MyStaticMplCanvas(MyMplCanvas):
+	"""Simple canvas with a sine plot."""
+	def compute_initial_figure(self):
+		t = arange(0.0, 3.0, 0.01)
+		s = sin(2*pi*t)
+		self.axes.plot(t, s)
+
+
+class MyDynamicMplCanvas(MyMplCanvas):
+	"""A canvas that updates itself every second with a new plot."""
+	def __init__(self, *args, **kwargs):
+		MyMplCanvas.__init__(self, *args, **kwargs)
+		timer = QtCore.QTimer(self)
+		timer.timeout.connect(self.update_figure)
+		timer.start(5000)
+		
+	def compute_initial_figure(self):
+		#self.data_x.append(0.0)
+		#self.data_y.append(0.0)
+		#self.data_x.append(1.0)
+		#self.data_y.append(1.0)
+		#self.axes.plot(self.data_x, self.data_y, 'r')
+		return
+
+	def update_figure(self):
+		self.data_x.append(datetime.now())
+		self.data_y.append(random.random())
+		
+		self.axes.plot(self.data_x,self.data_y, 'r',color='lightgray', linewidth=4)
+		self.axes.plot(self.data_x,self.data_y, 'r',color='green', linewidth=1)
+		self.draw()
+		
+
 
 class main(QtWidgets.QMainWindow):
 	def __init__(self):
-		
-		plt.axis()
-		plt.figure()
+	
 		
 		# Inititate UI.
 		QtWidgets.QMainWindow.__init__(self)
@@ -27,29 +89,38 @@ class main(QtWidgets.QMainWindow):
 		# Set up the epics PV's
 		self.setupEpics()
 		window = QtWidgets.QWidget()
-		# Create a layout
-		layout = QtWidgets.QVBoxLayout()
 		
-        #DB edits here...bit of a hack...
-		headerWidget = QtWidgets.QWidget()         
-		headerLayout = QtWidgets.QHBoxLayout()        
-		Head1 = QtWidgets.QLabel("PV")
-		Head2 = QtWidgets.QLabel("Description")
-		Head3 = QtWidgets.QLabel("Actual")
-		#Head4 = QtWidgets.QLabel("OK/FAIL")
-		Head1.setMinimumWidth(120)
-		Head2.setMinimumWidth(120)
-		Head3.setMinimumWidth(80)
-		#Head4.setMinimumWidth(80)
+		# Create overall, and L and R layouts
+		layout = QtWidgets.QHBoxLayout()
+		layoutLeft = QtWidgets.QVBoxLayout()
+		layoutRight= QtWidgets.QVBoxLayout()
+		widgetLeft = QtWidgets.QWidget()
+		widgetRight = QtWidgets.QWidget()
+		
+		# a figure instance to plot on
+		self.figureV = plt.figure()
+		self.figureW = plt.figure()
+		self.figureH = plt.figure()
+		
+		# this is the Canvas Widget that displays the `figure`
+		# it takes the `figure` instance as a parameter to __init__
+		self.canvasV = FigureCanvas(self.figureV)
+		self.canvasW = FigureCanvas(self.figureW)
+		self.canvasH = FigureCanvas(self.figureH)
 
-		#titleLayout.setContentsMargins(0,0,0,0)		
-		headerLayout.addWidget(Head1)
-		headerLayout.addWidget(Head2)
-		headerLayout.addWidget(Head3)
-		#headerLayout.addWidget(Head4)
-		headerWidget.setLayout(headerLayout)
-		#now add it to the overall layout...
-		layout.addWidget(headerWidget)
+		vac = MyDynamicMplCanvas(self.canvasV, width=5, height=4, dpi=100)
+		wat = MyDynamicMplCanvas(self.canvasW, width=5, height=4, dpi=100)
+		hel = MyDynamicMplCanvas(self.canvasH, width=5, height=4, dpi=100)
+		#hel.axis.plot(x, y, 'c', linewidth=3.3)
+				
+		# this is the Navigation widget
+		# it takes the Canvas widget and a parent
+		#self.toolbar = NavigationToolbar(self.canvasV, self)
+
+		layoutRight.addWidget(vac)
+		layoutRight.addWidget(wat)
+		layoutRight.addWidget(hel)
+		
 		
 		# Add groups one at a time
 		for name, pvs in self.groupList.items():
@@ -67,6 +138,7 @@ class main(QtWidgets.QMainWindow):
 				labelPV.setMinimumWidth(400)
 				labelText = QtWidgets.QLabel(str(values[0]))
 				labelText.setMinimumWidth(120)
+				labelText.setToolTip(str(pv))
 				#labelBCT_VAL = QtWidgets.QLabel(str(values[1]))
 				#labelBCT_VAL.setMinimumWidth(120)
 				labelRBV = QtWidgets.QLabel('-1')
@@ -74,7 +146,7 @@ class main(QtWidgets.QMainWindow):
 				#button = QtWidgets.QPushButton('-')
 				self.widgetList[pv] = [labelPV, labelText, labelRBV]
 				# Add widgets to status widget.
-				statusWidgetLayout.addWidget(labelPV)
+				#statusWidgetLayout.addWidget(labelPV)
 				statusWidgetLayout.addWidget(labelText)
 				#statusWidgetLayout.addWidget(labelBCT_VAL)
 				statusWidgetLayout.addWidget(labelRBV)
@@ -85,11 +157,16 @@ class main(QtWidgets.QMainWindow):
 				groupBoxLayout.addWidget(statusWidget)
 			# Set layout for the whole group.
 			group.setLayout(groupBoxLayout)
-			layout.addWidget(group)
+			layoutLeft.addWidget(group)
 		# Set window layout.
+		widgetLeft.setLayout(layoutLeft)
+		widgetRight.setLayout(layoutRight)
+		layout.addWidget(widgetLeft)
+		layout.addWidget(widgetRight)
 		window.setLayout(layout)
 		# Give the application the window widget.
 		self.setCentralWidget(window)
+		
 		# Set a timer to update GUI every 1 second.
 		timer = QtCore.QTimer(self) #must put the self argument in here!
 		timer.setInterval(5000)
@@ -123,7 +200,7 @@ class main(QtWidgets.QMainWindow):
 			self.widgetList[pvname][4].setText('FAIL')
 			self.widgetList[pvname][4].setStyleSheet("background-color: red")
 		#time.sleep(0.3) causes a crash!!! WTF?
-		app.processEvents() 
+		app.processEvents()
 	"""
 
 	def tick(self):
@@ -131,18 +208,19 @@ class main(QtWidgets.QMainWindow):
 		print("Time = ",tm)
 		for name, pvs in self.groupList.items():
 			for pv, values in pvs.items():
-				val=epics.caget(pv)
-				#print("%s : %s : %s = %s" % (name,pv,values,str(val)))
+				#val=epics.caget(pv)
+				val = random.random()
+				print("%s : %s : %s = %s" % (name,pv,values,str(val)))
 				self.widgetList[pv][2].setText(format(val,'.3f'))
 				if(pv=='SR11BCM01:CURRENT_MONITOR.VAL'):
 					self.history.append(val)
 					self.histtime.append(tm)
-					plt.scatter(self.histtime,self.history)
-					plt.show()
+					#plt.scatter(self.histtime,self.history)
+					#plt.show()
 					
 		
 	def setupEpics(self):
-		# PV_NAME, BCT_VAL, MIN, MAX
+		# PV_NAME, Desctiption
 		self.groupList = {}
 		# self.statusList = {}
 		
@@ -188,7 +266,7 @@ class main(QtWidgets.QMainWindow):
 
 
 if __name__ == "__main__":
-	# QApp 
+	# QApp
 	app = QtWidgets.QApplication(sys.argv)
 	# QWidget (MainWindow).
 	window = main()
