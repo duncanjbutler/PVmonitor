@@ -22,12 +22,9 @@ class MyMplCanvas(FigureCanvas):
 	"""Ultimately, this is a QWidget (as well as a FigureCanvasAgg, etc.)."""
 	def __init__(self, parent=None, width=5, height=4, dpi=100):
 		
-		#Hold the data here
-		self.data_x=[]
-		self.data_y=[]
-		
 		fig = Figure(figsize=(width, height), dpi=dpi)
 		self.axes = fig.add_subplot(111)
+		
 		# We want the axes cleared every time plot() is called
 		#self.axes.hold(False)
 		
@@ -54,7 +51,7 @@ class MyStaticMplCanvas(MyMplCanvas):
 
 
 class MyDynamicMplCanvas(MyMplCanvas):
-	"""A canvas that updates itself every second with a new plot."""
+	"""A canvas that updates itself every ~seconds."""
 	def __init__(self, *args, **kwargs):
 		MyMplCanvas.__init__(self, *args, **kwargs)
 		timer = QtCore.QTimer(self)
@@ -70,12 +67,9 @@ class MyDynamicMplCanvas(MyMplCanvas):
 		return
 
 	def update_figure(self):
-		self.data_x.append(datetime.now())
-		self.data_y.append(random.random())
-		
-		self.axes.plot(self.data_x,self.data_y, 'r',color='lightgray', linewidth=4)
-		self.axes.plot(self.data_x,self.data_y, 'r',color='green', linewidth=1)
-		self.draw()
+		return
+		#self.axes.plot(self.data_x,self.data_y, 'r',color='green', linewidth=1)
+		#self.draw()
 		
 
 
@@ -101,6 +95,10 @@ class main(QtWidgets.QMainWindow):
 		self.figureV = plt.figure()
 		self.figureW = plt.figure()
 		self.figureH = plt.figure()
+	
+		#arrays for the data
+		self.data_t=[]		#an array for the time
+		self.data_y=dict() #a dictionary of y value arrays, one for each PV
 		
 		# this is the Canvas Widget that displays the `figure`
 		# it takes the `figure` instance as a parameter to __init__
@@ -108,18 +106,18 @@ class main(QtWidgets.QMainWindow):
 		self.canvasW = FigureCanvas(self.figureW)
 		self.canvasH = FigureCanvas(self.figureH)
 
-		vac = MyDynamicMplCanvas(self.canvasV, width=5, height=4, dpi=100)
-		wat = MyDynamicMplCanvas(self.canvasW, width=5, height=4, dpi=100)
-		hel = MyDynamicMplCanvas(self.canvasH, width=5, height=4, dpi=100)
+		self.vac = MyDynamicMplCanvas(self.canvasV, width=5, height=4, dpi=100)
+		self.wat = MyDynamicMplCanvas(self.canvasW, width=5, height=4, dpi=100)
+		self.hel = MyDynamicMplCanvas(self.canvasH, width=5, height=4, dpi=100)
 		#hel.axis.plot(x, y, 'c', linewidth=3.3)
 				
 		# this is the Navigation widget
 		# it takes the Canvas widget and a parent
 		#self.toolbar = NavigationToolbar(self.canvasV, self)
 
-		layoutRight.addWidget(vac)
-		layoutRight.addWidget(wat)
-		layoutRight.addWidget(hel)
+		layoutRight.addWidget(self.vac)
+		layoutRight.addWidget(self.wat)
+		layoutRight.addWidget(self.hel)
 		
 		
 		# Add groups one at a time
@@ -128,6 +126,7 @@ class main(QtWidgets.QMainWindow):
 			groupBoxLayout = QtWidgets.QVBoxLayout()
 			# Scan through for each epics item in the group.
 			for pv, values in pvs.items():
+				self.data_y.setdefault(pv, []) #should create empty array for each PV
 				# Create new widget for each PV (a row of widgets).
 				statusWidget = QtWidgets.QWidget()
 				# Create layout for status widget.
@@ -136,13 +135,16 @@ class main(QtWidgets.QMainWindow):
 				# Create individual widgets for status widget.
 				labelPV = QtWidgets.QLabel(str(pv))
 				labelPV.setMinimumWidth(400)
+				labelPV.setStyleSheet('color: '+pvs[pv][1])
 				labelText = QtWidgets.QLabel(str(values[0]))
+				labelText.setStyleSheet('color: '+pvs[pv][1])
 				labelText.setMinimumWidth(120)
 				labelText.setToolTip(str(pv))
 				#labelBCT_VAL = QtWidgets.QLabel(str(values[1]))
 				#labelBCT_VAL.setMinimumWidth(120)
 				labelRBV = QtWidgets.QLabel('-1')
 				labelRBV.setMinimumWidth(80)
+				labelRBV.setStyleSheet('color: '+pvs[pv][1])
 				#button = QtWidgets.QPushButton('-')
 				self.widgetList[pv] = [labelPV, labelText, labelRBV]
 				# Add widgets to status widget.
@@ -169,13 +171,9 @@ class main(QtWidgets.QMainWindow):
 		
 		# Set a timer to update GUI every 1 second.
 		timer = QtCore.QTimer(self) #must put the self argument in here!
-		timer.setInterval(5000)
+		timer.setInterval(2000)
 		timer.timeout.connect(self.tick)
 		timer.start()
-		
-		#setup history arrays
-		self.history = []
-		self.histtime = []
 
 		# Connect epics.
 		for name, pvs in self.groupList.items():
@@ -204,20 +202,28 @@ class main(QtWidgets.QMainWindow):
 	"""
 
 	def tick(self):
-		tm = str(datetime.now())
-		print("Time = ",tm)
+		tm = datetime.now()
+		print("Time = ",str(tm))
+		self.data_t.append( tm.strftime("%H:%M:%S"))
 		for name, pvs in self.groupList.items():
 			for pv, values in pvs.items():
 				#val=epics.caget(pv)
 				val = random.random()
 				print("%s : %s : %s = %s" % (name,pv,values,str(val)))
 				self.widgetList[pv][2].setText(format(val,'.3f'))
-				if(pv=='SR11BCM01:CURRENT_MONITOR.VAL'):
-					self.history.append(val)
-					self.histtime.append(tm)
-					#plt.scatter(self.histtime,self.history)
-					#plt.show()
-					
+				self.data_y[pv].append(val)
+				if name=='Vacuum':
+					self.vac.axes.plot(self.data_t,self.data_y[pv], 'r',color=pvs[pv][1], linewidth=1)
+					self.vac.axes.xaxis.set_major_locator(plt.MaxNLocator(10))
+					self.vac.draw()
+				if name=='Cooling water':
+					self.wat.axes.plot(self.data_t,self.data_y[pv], 'r',color=pvs[pv][1], linewidth=1)
+					self.wat.axes.xaxis.set_major_locator(plt.MaxNLocator(10))
+					self.wat.draw()
+				if name=='Helium flows':
+					self.hel.axes.plot(self.data_t,self.data_y[pv], 'r',color=pvs[pv][1], linewidth=1)
+					self.hel.axes.xaxis.set_major_locator(plt.MaxNLocator(10))
+					self.hel.draw()
 		
 	def setupEpics(self):
 		# PV_NAME, Desctiption
@@ -226,35 +232,34 @@ class main(QtWidgets.QMainWindow):
 		
 		#Storage ring, wiggler, mono
 		vacuum = {}
-		vacuum['SR08SCW01:FIELD_MONITOR.VAL'] = ['Wiggler Field']
-		vacuum['SR11BCM01:CURRENT_MONITOR.VAL'] = ['Ring Current']
-		vacuum['SR00:BEAM_ENERGY_MONITOR.VAL'] = ['Electron Energy']
+		vacuum['SR08SCW01:FIELD_MONITOR.VAL'] = ['Wiggler Field','red']
+		vacuum['SR11BCM01:CURRENT_MONITOR.VAL'] = ['Ring Current','orange']
+		vacuum['SR00:BEAM_ENERGY_MONITOR.VAL'] = ['Electron Energy','purple']
 
 		#Beamline
 		waterflows = {}
-		waterflows['SR08ID01PSS01:FES_EPS_ENABLE_STS'] = ['Beamline']
-		waterflows['SR08ID01PSS01:HU01A_MON_SHT_MOD_PERM_STS'] = ['Shutter Mode']
-		waterflows['SR08ID01TBL21:Z.VAL'] = ['Mama Table 2A']
-		waterflows['SR08ID01DCM01:BRAGG1.VAL'] = ['Mono Bragg 1']
-		waterflows['SR08ID01DCM01:BRAGG2.VAL'] = ['Mono Bragg 2']
-		waterflows['SR08ID01DCM01:X.VAL'] = ['Mono X']
-		#beamline['SR00:BEAM_ENERGY_MONITOR.VAL'] = ['Electron Energy','3 GeV',3.01,3.05]
+		waterflows['SR08ID01PSS01:FES_EPS_ENABLE_STS'] = ['Beamline','green']
+		waterflows['SR08ID01PSS01:HU01A_MON_SHT_MOD_PERM_STS'] = ['Shutter Mode','gray']
+		waterflows['SR08ID01TBL21:Z.VAL'] = ['Mama Table 2A','blue']
+		waterflows['SR08ID01DCM01:BRAGG1.VAL'] = ['Mono Bragg 1','lightblue']
+		waterflows['SR08ID01DCM01:BRAGG2.VAL'] = ['Mono Bragg 2','lightgreen']
+		waterflows['SR08ID01DCM01:X.VAL'] = ['Mono X','yellow']
 
 		#Filters
 		heflows = {}
-		heflows['SR08ID01FR01:PDL01.VAL'] = ['Paddle 1']
-		heflows['SR08ID01FR01:PDL02.VAL'] = ['Paddle 2']
-		heflows['SR08ID01FR01:PDL03.VAL'] = ['Paddle 3']
-		heflows['SR08ID01FR01:PDL04.VAL'] = ['Paddle 4']
-		heflows['SR08ID01FR01:PDL05.VAL'] = ['Paddle 5']
+		heflows['SR08ID01FR01:PDL01.VAL'] = ['Paddle 1','brown']
+		heflows['SR08ID01FR01:PDL02.VAL'] = ['Paddle 2','black']
+		heflows['SR08ID01FR01:PDL03.VAL'] = ['Paddle 3','cyan']
+		heflows['SR08ID01FR01:PDL04.VAL'] = ['Paddle 4','pink']
+		heflows['SR08ID01FR01:PDL05.VAL'] = ['Paddle 5','darkgreen']
 
 
 
 
 		# Add groups to list.
-		self.groupList['Vaccum'] = vacuum
+		self.groupList['Vacuum'] = vacuum
 		self.groupList['Cooling water'] = waterflows
-		self.groupList['He flows'] = heflows
+		self.groupList['Helium flows'] = heflows
 
 
 		#beamline
