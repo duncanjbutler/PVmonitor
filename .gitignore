@@ -1,0 +1,7 @@
+# Remove python generated files
+*.pyc
+__pycache__
+.DS_Store
+
+# Other
+*.csv
